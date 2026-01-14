@@ -1,0 +1,60 @@
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Vazirmatn, sans-serif;
+}
+
+a {
+    text-decoration: none;
+}
+
+.base-page {
+    display: grid;
+    grid-template-rows: 150px auto;
+    gap: 10px;
+    background-color: #F8F9FB;
+}
+
+.base-page>.content {
+    display: grid;
+}
+
+.base-page>footer {
+    margin-top: 400px;
+}
+
+.base-page>.messages {
+    display: none;
+    background-color: #3b3bff;
+}
+
+h1,
+h2 {
+    all: unset;
+}
+
+@keyframes gradientAnimation {
+    0% {
+        background-position: 0 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0 50%;
+    }
+}
+
+/* Dis sub */
+form>.disabled-btn {
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+}
+
+@media only screen and (min-width: 481px) and (max-width: 1200px) {
+    .base-page>header {
+        font-size: 16px
+    }
+}

@@ -1,0 +1,13 @@
+**/__pycache__/
+__pypackages__/
+*_versions
+*.pyc
+*.venv
+.vscode
+
+frontend/src/static/images/
+config/.env
+
+static_root/
+media/*
+!/media/products/
