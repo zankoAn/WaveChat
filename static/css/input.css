@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@tailwind utilities;
+
+@layer utilities {
+  .rtl {
+    direction: rtl;
+  }
+
+  .ltr {
+    direction: ltr;
+  }
+}

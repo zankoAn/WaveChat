@@ -1,136 +1,146 @@
-import json
-import os
-import random
-import string
-import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
-from apps.chat.redis_cli import redis_client
+from asgiref.sync import sync_to_async
+from django.core.files.base import ContentFile
+from django.db.models import Case, F, Q, When, Window
+from django.db.models.fields.files import default_storage
+from django.db.models.functions import RowNumber
 
-
-USER_MESSAGES_KEY = "chat:user_messages:{}"
-UNREAD_MESSAGES_KEY = "chat:unread_msgs:{}"
-MESSAGES_TTL = 60 * 60 * 24 * 1
-
-
-def save_user_message(
-    sender: str,
-    chat_id: str,
-    text: str = "",
-    input_file=None,
-    msg_id=0,
-    timestamp=0,
-    save_storage=True,
-    image_base64=False,
-):
-    msg_id = msg_id if msg_id else int(time.time() * 1000000)
-    payload_data = {
-        "timestamp": timestamp if timestamp else time.time(),
-        "is_read": True,
-        "msg_id": msg_id,
-        "chat_id": chat_id,
-        "sender": sender,
-    }
-    if text:
-        payload_data["text"] = text
-
-    if image_base64:
-        payload_data["image"] = image_base64
-        payload_data["type"] = "image"
-
-    if input_file:
-        input_file.seek(0)
-        if "image" in input_file.name:
-            file_name = "".join(random.choices(string.ascii_letters, k=20)) + ".jpg"
-        else:
-            file_name = input_file.name
-
-        # TODO: May adjust it to cover more local storage method
-        with open(f"media/{file_name}", "wb") as output:
-            file_bytes = input_file.read()
-            output.write(file_bytes)
-
-        payload_data["image"] = f"/media/{file_name}"
-        payload_data["type"] = "image"
-
-    if text and input_file:
-        payload_data["type"] = "mixed"
-
-    payload = json.dumps(payload_data, ensure_ascii=False)
-    pipe = redis_client.pipeline()
-
-    if sender:
-        key = USER_MESSAGES_KEY.format(sender)
-        pipe.rpush(key, payload)
-        pipe.expire(key, MESSAGES_TTL)
-        channel = f"chat:{sender}"
-        pipe.publish(channel, payload)
-        pipe.execute()
-
-    if chat_id and chat_id != "None":
-        key = USER_MESSAGES_KEY.format(chat_id)
-        pipe = redis_client.pipeline()
-        pipe.rpush(key, payload)
-        pipe.expire(key, MESSAGES_TTL)
-        channel = f"chat:{chat_id}"
-        pipe.publish(channel, payload)
-        pipe.execute()
-
-    if save_storage:
-        save_locale_storage_msg(payload)
+from apps.chat.models import Message
+from apps.chat.validators import InputFileValidator
 
 
-def get_chat_history(chat_id: str):
-    user_key = USER_MESSAGES_KEY.format(chat_id)
-    unread_key = UNREAD_MESSAGES_KEY.format(chat_id)
+class MessageService:
+    def __init__(self):
+        self._store_file_sync = sync_to_async(self._store_file)
 
-    unread_ids = redis_client.smembers(unread_key)
-    user_msgs = redis_client.lrange(user_key, 0, -1)
+    @staticmethod
+    def _store_file(file_bytes: bytes, original_filename: str) -> str:
+        """
+        file name: random_prefix + "_" + sanitized_original_name
+        """
+        if not original_filename:
+            original_filename = "file"
 
-    all_messages = []
-    for msg_bytes in user_msgs:
+        path = Path(original_filename)
+        stem = path.stem
+        ext = path.suffix.lower()
+        random_prefix = uuid.uuid4().hex[:6]
+        final_name = f"{random_prefix}_{stem}{ext}"
+        saved_path = default_storage.save(final_name, ContentFile(file_bytes))
+        return default_storage.url(saved_path)
+
+    @staticmethod
+    async def amark_messages_as_read(sender, receiver) -> int:
+        updated_count = await Message.objects.filter(
+            receiver=receiver, sender=sender, is_read=False
+        ).aupdate(is_read=True)
+        return updated_count
+
+    @staticmethod
+    async def aget_message_by_id(msg_id: int) -> Message | None:
         try:
-            msg = (
-                msg_bytes.decode("utf-8") if isinstance(msg_bytes, bytes) else msg_bytes
+            return await Message.objects.select_related(
+                "reply_to_message_id", "receiver", "sender"
+            ).aget(id=msg_id)
+        except Message.DoesNotExist:
+            return None
+
+    @staticmethod
+    async def aget_last_messages_per_chat(
+        current_user, chats, limit_per_chat: int = 1, chats_limit: int = 50
+    ):
+        qs = (
+            Message.objects.filter(
+                Q(sender__username=current_user) & Q(receiver__username__in=chats)
+                | Q(receiver__username=current_user) & Q(sender__username__in=chats)
             )
-            data = json.loads(msg)
-            if str(data.get("msg_id")) in unread_ids:
-                data["is_read"] = False
-            else:
-                data["is_read"] = True
-
-            data["is_history"] = True
-            all_messages.append(data)
-        except:
-            continue
-
-    all_messages.sort(key=lambda x: x["timestamp"])
-    return [json.dumps(msg) for msg in all_messages]
-
-
-def mark_all_as_read(chat_id: str):
-    unread_key = UNREAD_MESSAGES_KEY.format(chat_id)
-    redis_client.delete(unread_key)
-    return True
-
-
-# TODO: May adjust it to cover more local storage method
-def save_locale_storage_msg(payload):
-    with open("msgs.json", "a") as _file:
-        _file.write(payload + "\n")
-
-
-# TODO: May adjust it to cover more local storage method
-def load_locale_msg_storage():
-    if os.path.exists("msgs.json"):
-        with open("msgs.json") as _file:
-            msgs = _file.readlines()
-            for msg in msgs:
-                msg = json.loads(msg)
-                save_user_message(
-                    msg["sender"],
-                    msg["chat_id"],
-                    msg.get("text"),
-                    timestamp=msg["timestamp"],
-                    save_storage=False,
-                    image_base64=msg.get("image"),
+            .select_related("reply_to_message_id", "receiver", "sender")
+            .annotate(
+                other_person=Case(
+                    When(
+                        sender__username=current_user,
+                        then=F("receiver__username"),
+                    ),
+                    default=F("sender__username"),
                 )
+            )
+            .annotate(
+                rn=Window(
+                    expression=RowNumber(),
+                    partition_by="other_person",
+                    order_by=F("created").desc(),
+                )
+            )
+            .filter(rn__lte=limit_per_chat)
+            .order_by("-created")[:chats_limit]
+        )
+        return qs.filter()
+
+    @staticmethod
+    async def aget_chat_history(
+        sender,
+        receiver,
+        limit: int = 50,
+        before_ts: int | None = None,
+    ):
+        qs = (
+            Message.objects.select_related("reply_to_message_id", "receiver", "sender")
+            .filter(
+                Q(sender=sender, receiver=receiver)
+                | Q(sender=receiver, receiver=sender)
+            )
+            .order_by("-created")
+        )
+
+        if before_ts:
+            dt = datetime.fromtimestamp(float(before_ts), tz=timezone.utc)
+            qs = qs.filter(created__lt=dt)
+
+        qs = qs[:limit]
+
+        messages = qs.filter()
+        return messages
+
+    @staticmethod
+    async def aget_unread_count(current_user, chat):
+        m = (
+            await Message.objects.select_related("receiver", "sender")
+            .filter(receiver=current_user, sender__username__iexact=chat, is_read=False)
+            .filter(is_read=False)
+            .acount()
+        )
+        return m
+
+    async def create_new_message(
+        self, sender, receiver, data: dict
+    ) -> tuple[Message | None, str | None]:
+        file_path = ""
+        if data.get("file_upload"):
+            is_valid, error_msg, file_bytes = InputFileValidator().validate(data)
+            if not is_valid:
+                return None, error_msg
+
+            file_name = data["file_upload"].name.replace(" ", "_")
+            file_path = await self._store_file_sync(file_bytes, file_name)
+
+        reply_to = None
+        if reply_id := data.get("reply_id"):
+            try:
+                reply_to = await Message.objects.select_related(
+                    "receiver", "sender"
+                ).aget(id=int(reply_id))
+            except Message.DoesNotExist:
+                pass
+
+        msg = await Message.objects.acreate(
+            text=data.get("text", ""),
+            file=file_path,
+            sender=sender,
+            receiver=receiver,
+            reply_to_message_id=reply_to,
+            is_read=False,
+        )
+        return msg, None

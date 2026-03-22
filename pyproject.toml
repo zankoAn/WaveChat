@@ -1,0 +1,25 @@
+[project]
+name = "chatRoom"
+version = "0.1.0"
+description = "ChatRoom"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "asyncapi-generator>=0.1.0",
+    "channels>=4.3.2",
+    "channels-redis>=4.3.0",
+    "django>=5.2.7",
+    "django-environ>=0.12.0",
+    "gunicorn>=25.1.0",
+    "ipython>=9.10.0",
+    "locust>=2.43.3",
+    "ruff>=0.15.4",
+    "tzdata>=2025.3",
+    "uvicorn>=0.40.0",
+    "websockets>=16.0",
+    "whitenoise>=6.11.0",
+]
+
+[[tool.uv.index]]
+url = "https://mirror-pypi.runflare.com/"
+default = true

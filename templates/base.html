@@ -1,30 +1,45 @@
 {% load static %}
 <!DOCTYPE html>
-<html itemscope="itemscope" itemtype="http://schema.org/WebPage" dir="rtl" lang="fa-IR">
+<html itemscope="itemscope" itemtype="http://schema.org/WebPage" lang="fa-IR">
 
 <head>
     <meta charset="utf-8" />
     <meta name='robots' content='max-image-preview:large, index, follow' />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="content-type" content="text/html;charset=UTF-8" />
-    <meta name="theme-color" content="#f8f9fb" />
-    <link rel="stylesheet" href="{% static 'base.css' %}" type="text/css" />
-    <link rel='stylesheet' href="{% static 'chat.css' %}" type='text/css' />
-    {% block dynamic_header %}{% endblock dynamic_header %}
+    <script type="module" src="{% static 'js/browser-image-compression.js' %}"></script>
+    <link rel="stylesheet" href="{% static 'css/output.css' %}">
 </head>
 
-<body>
-    <div class="base-page">
-        <div class="content">
+<body class="bg-[#0f1621] min-h-screen font-sans antialiased">
+    <div class="base-page flex flex-col h-screen">
+
+        <div id="userModal"
+            class="hidden fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center">
+            <div
+                class="bg-[#17212b] p-8 rounded-2xl shadow-2xl w-full max-w-md mx-4 text-center border border-gray-700">
+                <h3 class="text-xl font-bold text-white mb-6">یوزنیم خودت رو انگلیسی بنویس بعدا + بزن و دوستات رو اضافه
+                    کن</h3>
+
+                <input id="sender_username"
+                    class="w-full px-5 py-3.5 bg-[#0e1621] border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600/40 transition"
+                    type="text" placeholder="Username (English)" autocomplete="off">
+
+                <div id="username-error" class="hidden mt-3 text-red-400 text-sm font-medium">
+                </div>
+
+                <button id="saveBtn"
+                    class="w-full mt-5 py-3.5 bg-teal-600 hover:bg-teal-500 rounded-xl font-medium text-white transition shadow">
+                    تایید
+                </button>
+            </div>
+        </div>
+
+        <div class="content flex-1 relative">
             {% include 'chat.html' %}
         </div>
     </div>
+    <script type="module" src="{% static 'js/auth.js' %}"></script>
 </body>
-<script>
-    const top_bar = document.querySelector(".site-top-header");
-    if (!top_bar) {
-        document.querySelector(".base-page").style.gridTemplateRows = "20px auto"
-    }
-</script>
 
 </html>

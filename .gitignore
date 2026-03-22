@@ -4,6 +4,7 @@ __pypackages__/
 *.pyc
 *.venv
 .vscode
+uv.lock
 
 frontend/src/static/images/
 config/.env
