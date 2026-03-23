@@ -59,7 +59,7 @@ function renderMessageText(containerEl, rawText) {
     temp.innerHTML = safeHtml;
 
     containerEl.className =
-        'message-text inline-flex flex-wrap items-center gap-x-1.5 ' +
+        'message-text block items-center gap-x-1.5 ' +
         'text-base sm:text-lg leading-6 md:leading-7';
     containerEl.textContent = '';
 
