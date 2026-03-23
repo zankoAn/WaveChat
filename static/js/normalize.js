@@ -73,9 +73,7 @@ export function extractCodeContent(text) {
     if (!text || typeof text !== 'string') return null;
 
     const matches = text.match(/`/g);
-    if (matches.length < 6) {
-        return null;
-    }
+    if (!matches || matches.length < 6) return null;
 
     const result = [];
     let lastIndex = 0;
