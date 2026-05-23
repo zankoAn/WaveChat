@@ -125,6 +125,7 @@ class MessageService:
                 return None, error_msg
 
             file_name = data["file_upload"].name.replace(" ", "_")
+            file_bytes = file_upload.read()
             file_path = await self._store_file_sync(file_bytes, file_name)
 
         reply_to = None
