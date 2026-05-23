@@ -5,12 +5,19 @@ import { createFilePreviewClipboard } from "./fileUploader.js";
 import { showReply, createReplyMsgElement } from "./replyManager.js";
 import { detectTextDirection, escapeHtml, extractCodeContent } from "./normalize.js"
 
-
 const TEXT_PART_CLASS = 'text-part whitespace-pre-line inline align-middle';
+
+function linkify(text) {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.replace(urlRegex, (url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline break-all inline-block z-10 relative cursor-pointer">${url}</a>`;
+    });
+}
+
 function createTextSpan(txt, extra = '') {
     const span = document.createElement('span');
     span.className = `${TEXT_PART_CLASS}${extra ? ' ' + extra : ''}`;
-    span.textContent = txt;
+    span.innerHTML = linkify(escapeHtml(txt));
     return span;
 }
 
@@ -29,42 +36,37 @@ function renderMessageText(containerEl, rawText) {
     const parsedParts = extractCodeContent(rawText);
     const msgDirection = detectTextDirection(rawText);
 
+    containerEl.className = 'message-text block text-base sm:text-lg leading-6 md:leading-7';
+    containerEl.textContent = '';
+
     if (parsedParts !== null) {
         if (parsedParts && parsedParts.length > 0) {
             parsedParts.forEach(part => {
                 if (part.type === 'text') {
                     const pEl = document.createElement('p');
-                    pEl.textContent = part.content;
+                    pEl.innerHTML = linkify(escapeHtml(part.content));
                     pEl.style.whiteSpace = 'pre-wrap';
                     containerEl.appendChild(pEl);
                 } else if (part.type === 'code') {
                     const preEl = document.createElement('pre');
-                    preEl.className = 'text-part bg-gray-900 text-green-400 text-sm p-2 rounded-lg overflow-x-auto border border-gray-700 shadow-inner whitespace-pre-wrap break-words';
-                    preEl.classList.add(msgDirection);
+                    preEl.className = 'text-part bg-gray-900 text-green-400 text-sm p-3 rounded-lg overflow-x-auto border border-gray-700 shadow-inner whitespace-pre-wrap break-words my-2 text-left';
                     preEl.textContent = part.content;
                     containerEl.appendChild(preEl);
                 }
             });
         } else {
             const fallbackP = document.createElement('p');
-            fallbackP.textContent = rawText;
+            fallbackP.innerHTML = linkify(escapeHtml(rawText));
             containerEl.appendChild(fallbackP);
         }
         return containerEl;
     }
 
     const safeHtml = escapeHtml(rawText);
-
     const temp = document.createElement('div');
     temp.innerHTML = safeHtml;
 
-    containerEl.className =
-        'message-text block items-center gap-x-1.5 ' +
-        'text-base sm:text-lg leading-6 md:leading-7';
-    containerEl.textContent = '';
-
     const frag = document.createDocumentFragment();
-
     const colonRe = /:([a-z0-9_-]+):/gi;
     const unicodeRe = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu;
 
@@ -132,6 +134,8 @@ function addDoubleClickReply(element) {
     const DOUBLE_CLICK_DELAY = 300;
 
     element.addEventListener('click', function (e) {
+        if (e.target.tagName === 'A') return;
+
         if (window.getSelection().toString().trim().length > 0) {
             lastClickTime = 0;
             return;
@@ -146,97 +150,200 @@ function addDoubleClickReply(element) {
     });
 }
 
-function addTouchClearSelection(element) {
-    element.addEventListener('touchstart', () => {
-        document.getSelection()?.removeAllRanges();
-    });
-}
-
-function addRightClickOptions(element, msgId, text) {
+function addRightClickAndLongPressOptions(element, msgId, text) {
     const menu = document.createElement('div');
     menu.className = `
-        menu
-        absolute hidden
-        bg-[#212936] text-white
-        rounded-md shadow-lg
-        min-w-[130px] p-1
+        menu absolute hidden
+        bg-[#1e2530] text-gray-200
+        rounded-xl shadow-2xl border border-gray-700/50
+        min-w-[150px] p-1.5
         transition-all duration-200 ease-out
-        opacity-0 scale-100
-        right-5
-        z-50
+        opacity-0 scale-95
+        z-50 select-none
     `;
     menu.dataset.role = 'msg-menu';
 
-    const makeBtn = (label, fn) => {
+    const makeBtn = (label, iconSvg, fn) => {
         const b = document.createElement('button');
-        b.textContent = label;
         b.className = `
-            w-full text-base text-left px-2 py-1
-            rounded-md
-            hover:bg-[#1e2632]
-            focus:outline-none
-            transition-colors duration-150
+            w-full flex items-center justify-between px-3 py-2 rounded-lg
+            hover:bg-gray-700/50 active:bg-gray-700 text-sm font-medium
+            transition-colors text-right dir-rtl gap-4
         `;
-        b.onclick = fn;
+        b.innerHTML = `<span>${label}</span>${iconSvg}`;
+        b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            fn(e);
+            hideMenu();
+        });
         return b;
     };
 
     const copy = async () => {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(text);
+        if (navigator.clipboard && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return;
+            } catch (err) { console.error(err); }
         }
-        hideMenu(menu);
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            document.execCommand('copy');
+        } catch (err) {
+            console.error('Fallback copy failed', err);
+        }
+        document.body.removeChild(textArea);
     };
 
-    const replyF = () => {
-        showReply(element);;
-        hideMenu(menu);
-    };
-
+    const replyF = () => { hideMenu(); showReply(element) };
     const edit = () => console.log('edit', msgId);
 
-    menu.append(
-        makeBtn('Reply', replyF),
-        makeBtn('Copy', copy),
-        makeBtn('Edit', edit),
-    );
-    element.appendChild(menu);
+    const replyIcon = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>`;
+    const copyIcon = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>`;
+    const editIcon = `<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>`;
 
-    const showMenu = (msgEl) => {
-        msgEl.preventDefault();
-        const { left, top } = element.getBoundingClientRect();
-        menu.style.left = `${msgEl.clientX - left}px`;
-        menu.style.top = `${msgEl.clientY - top}px`;
+    menu.append(
+        makeBtn('پاسخ', replyIcon, replyF),
+        makeBtn('کپی متن', copyIcon, copy),
+        makeBtn('ویرایش', editIcon, edit),
+    );
+
+    element.appendChild(menu);
+    let isOpen = false;
+
+    const showMenu = (clientX, clientY) => {
+        document.querySelectorAll('.menu').forEach(m => {
+            if (m !== menu) m.classList.add('hidden');
+        });
+
         menu.classList.remove('hidden');
+        isOpen = true;
 
         requestAnimationFrame(() => {
-            menu.classList.replace('opacity-0', 'opacity-100');
-            menu.classList.replace('scale-95', 'scale-100');
-        });
-    }
+            const menuRect = menu.getBoundingClientRect();
+            const parentRect = element.getBoundingClientRect();
 
-    const hideMenu = (menu) => {
-        menu.classList.replace('opacity-100', 'opacity-0');
-        menu.classList.replace('scale-100', 'scale-95');
-        setTimeout(() => menu.classList.add('hidden'), 200);
+            let x = clientX - parentRect.left;
+            let y = clientY - parentRect.top;
+            const padding = 12;
+
+            if (clientX + menuRect.width + padding > window.innerWidth) {
+                x = parentRect.width - menuRect.width - padding;
+            }
+            if (clientY + menuRect.height + padding > window.innerHeight) {
+                y = parentRect.height - menuRect.height - padding;
+            }
+
+            if (x < padding) x = padding;
+            if (y < padding) y = padding;
+
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
+
+            requestAnimationFrame(() => {
+                menu.classList.replace('opacity-0', 'opacity-100');
+                menu.classList.replace('scale-95', 'scale-100');
+            });
+        });
     };
 
-    document.addEventListener('click', e => { if (!menu.contains(e.target)) hideMenu(menu); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideMenu(menu); });
-    menu.addEventListener('contextmenu', e => {
+    const hideMenu = () => {
+        if (!isOpen) return;
+        menu.classList.replace('opacity-100', 'opacity-0');
+        menu.classList.replace('scale-100', 'scale-95');
+        setTimeout(() => menu.classList.add('hidden'), 150);
+        isOpen = false;
+    };
+
+    element.addEventListener('contextmenu', (e) => {
+        if (e.target.tagName === 'A') return;
         e.preventDefault();
-        e.stopPropagation();
-    });
-    element.addEventListener('contextmenu', msgEl => {
-        const openMenus = document.getElementsByClassName('menu opacity-100');
-        if (openMenus.length >= 1) {
-            Array.from(openMenus).forEach(menu => {
-                hideMenu(menu);
-            });
-        }
-        showMenu(msgEl);
+        showMenu(e.clientX, e.clientY);
     });
 
+    let touchTimeout;
+    element.addEventListener('touchstart', (e) => {
+        if (e.target.tagName === 'A') return;
+        const touch = e.touches[0];
+        touchTimeout = setTimeout(() => {
+            e.preventDefault();
+            showMenu(touch.clientX, touch.clientY);
+        }, 600);
+    }, { passive: true });
+
+    element.addEventListener('touchmove', () => clearTimeout(touchTimeout));
+    element.addEventListener('touchend', () => clearTimeout(touchTimeout));
+
+    document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !element.contains(e.target)) {
+            hideMenu();
+        }
+    });
+
+    window.addEventListener('scroll', hideMenu, true);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') hideMenu();
+    });
+    menu.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+export function createTickIcon(isRead = false) {
+    const tick = document.createElement('div');
+    tick.className = 'message-tick flex items-center select-none';
+
+    if (!isRead) {
+        tick.innerHTML = `
+            <svg id="single-tick" class="
+            w-[18px] h-[15px] stroke-[#e8ffa3] stroke-[2.5] fill-none stroke-linecap-round stroke-linejoin-round" viewBox="0 0 26 15">
+                <polyline class="tick1" points="2,8 6,11.5 14,3" />
+            </svg>   
+        `;
+    } else {
+        tick.innerHTML = `
+          <svg id="double-tick" class="w-[18px] h-[15px] stroke-[#4cff76] stroke-[2.5] fill-none stroke-linecap-round stroke-linejoin-round" viewBox="0 0 26 15">
+            <polyline points="2,8 6,11.5 14,3" />
+            <polyline class="-translate-x-1.5" points="15,10 16,12 25,2" />
+          </svg>
+        `;
+    }
+    return tick;
+}
+
+export function createMessageLoadingElement() {
+    const loading = Object.assign(document.createElement('span'), {
+        className: "msg-loading flex items-center"
+    });
+    loading.innerHTML = `
+        <svg class="w-4 h-4 stroke-gray-400 pb-[1px] stroke-2 fill-none animate-spin" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="16"/>
+        </svg>
+    `;
+    return loading;
+}
+
+export function createMessageTimeElement(timestamp, isRightAligned) {
+    const sendTime = document.createElement('div');
+    const msgDate = timestamp ? new Date(timestamp * 1000) : new Date();
+
+    const h = msgDate.getHours();
+    const m = msgDate.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 === 0 ? 12 : h % 12;
+
+    sendTime.textContent = `${hour12}:${m.toString().padStart(2, '0')} ${ampm}`;
+    sendTime.className = `send-time ltr text-[11px] text-gray-400/80 pb-[2px] select-none font-mono`;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'relative inline-flex items-center';
+    wrapper.appendChild(sendTime);
+    return wrapper;
 }
 
 export function createMessageElement(
@@ -253,150 +360,78 @@ export function createMessageElement(
     const isOwnMessage = sender === 'self';
     const isStartSide = isRightAligned === 'start';
 
-    // ─── Style classes ────────────────────────────────
     const bubbleClass = isStartSide
         ? 'bg-gradient-to-bl from-[#2d3c44] to-[#252b3b] rounded-tr-2xl rounded-tl-2xl rounded-br-2xl  rounded-bl-2xl rounded-l-none'
         : 'bg-gradient-to-br from-[#33334f] to-[#1E1E2E] rounded-tl-2xl rounded-tr-2xl rounded-bl-2xl  rounded-br-2xl rounded-r-none';
 
-    // ─── Root message container ───────────────────────
     const msgEl = document.createElement('div');
-    msgEl.className = `msg relative ${bubbleClass} rtl text-white pb-0 pt-2.5 pr-3 pl-3 min-w-[8.75rem] max-w-xs md:max-w-120 shadow-sm hover:shadow-md transition-shadow wrap-anywhere`;
+    msgEl.className = `msg relative ${bubbleClass} rtl text-[15px] sm:text-[16px] text-gray-100/95 pb-1.5 pt-2 px-4 min-w-[110px] max-w-[85%] sm:max-w-[70%] md:max-w-[480px] transition-all duration-200 break-words select-text`;
     msgEl.dataset.msgId = msgId;
 
-    // ─── Reply (if exists) ────────────────────────────
     if (reply) {
         const replyEl = createReplyMsgElement(reply, isRightAligned);
         msgEl.appendChild(replyEl);
     }
 
-    // ─── Message text ─────────────────────────────────
-    const textEl = document.createElement('span');
+    const textEl = document.createElement('div');
+    textEl.className = 'relative z-10 font-normal leading-relaxed tracking-wide';
     renderMessageText(textEl, text);
 
-    // ─── Metadata row ─────────────────────────────────
     const metaEl = document.createElement('div');
+    const metaColor = isOwnMessage ? 'text-white/40' : 'text-gray-500/60';
     metaEl.className = 'metadata flex items-center gap-1 pb-1.5 mt-1 text-xs text-gray-400 opacity-80 justify-start';
 
-    // ─── Reactions ────────────────────────────────────
-    const [currentReactionsEl, quickReactEl, emojiPanelEl] = createReactions(msgEl, msgId, reactions, isRightAligned);
+    metaEl.append(sendTime, createHiddenMsgId(msgId));
 
-    // ─── Metadata ────────────────────────────
-    if (isOwnMessage && loading) {
-        metaEl.appendChild(loading);
+    if (isOwnMessage) {
+        const isPending = String(msgId).startsWith('tmp_');
+        if (isPending && loading) {
+            metaEl.appendChild(loading);
+        } else if (tick) {
+            metaEl.appendChild(tick);
+        }
     }
 
-    metaEl.append(sendTime, createHiddenMsgId(msgId), tick);
-    msgEl.append(textEl, emojiPanelEl, metaEl);
-    metaEl.append(quickReactEl);
-    metaEl.append(currentReactionsEl);
+    const clearFix = document.createElement('div');
+    clearFix.className = 'clear-both';
+
+    const [currentReactionsEl, quickReactEl, emojiPanelEl] = createReactions(msgEl, msgId, reactions, isRightAligned);
+
+    msgEl.append(textEl, clearFix, emojiPanelEl, metaEl);
+    metaEl.append(quickReactEl, currentReactionsEl);
 
     addDoubleClickReply(msgEl);
-    addTouchClearSelection(msgEl);
-    addRightClickOptions(msgEl, msgId, text);
+    addRightClickAndLongPressOptions(msgEl, msgId, text);
+
     return msgEl;
 }
 
-export function createTickIcon(isRead = false) {
-    const tick = document.createElement('div');
-    tick.className = 'message-tick hidden pb-[10px]';
-    if (!isRead) {
-        tick.innerHTML = `
-      <svg id="single-tick" class="w-7 h-4 stroke-[#e8ffa3] stroke-2 fill-none stroke-linecap-round stroke-linejoin-round" viewBox="0 0 16 15">
-        <polyline class="tick1" points="2,8 6,11.5 14,3" />
-      </svg>
-    `;
-    } else {
-        tick.innerHTML = `
-      <svg id="dubble-tick" class="w-7 h-4 stroke-[#e8ffa3] stroke-2 fill-none stroke-linecap-round stroke-linejoin-round" viewBox="0 0 26 15">
-        <polyline class="tick1" points="2,8 6,11.5 14,3" />
-        <polyline class="tick2 -translate-x-1.5 animate-[appear_0.35s_ease-out_0.15s_forwards] " points="15,10 16,12 25,2" />
-      </svg>
-    `;
+export function updateMessageStatus(tmpId, realId, isRead = false) {
+    const msgEl = document.querySelector(`[data-msg-id="${tmpId}"]`);
+    if (!msgEl) return;
+
+    msgEl.dataset.msgId = realId;
+    const hiddenIdEl = msgEl.querySelector(`#id_${tmpId}`);
+    if (hiddenIdEl) {
+        hiddenIdEl.id = `id_${realId}`;
+        hiddenIdEl.textContent = realId;
     }
-    return tick;
-};
 
-export function createLoadingIcon() {
-    const loading = Object.assign(document.createElement('span'), { className: "msg-loading hidden" });
-    loading.innerHTML = `
-    <svg class="w-7 h-4 stroke-[#e8ffa3] pb-[5px] stroke-2 fill-none stroke-linecap-round stroke-linejoin-round" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10" class="clock-bg" />
-      <g class="clock-hand origin-[12px_12px] animate-spin">
-        <line x1="12" y1="12" x2="12" y2="6" stroke-width="2"/>
-        <line x1="12" y1="12" x2="16" y2="12" stroke-width="2"/>
-      </g>
-    </svg>
-  `;
-    return loading;
-}
+    const metaEl = msgEl.querySelector('.metadata');
+    if (metaEl) {
+        const loadingEl = metaEl.querySelector('.msg-loading');
+        if (loadingEl) {
+            loadingEl.remove();
+        }
 
-export function addSendTimeToMsg(timestamp, isRightAligned) {
-    const sendTime = document.createElement('div');
-    const msgDate = timestamp ? new Date(timestamp * 1000) : new Date();
+        const oldTick = metaEl.querySelector('.message-tick');
+        if (oldTick) {
+            oldTick.remove();
+        }
 
-    const h = msgDate.getHours();
-    const m = msgDate.getMinutes();
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const hour12 = h % 12 === 0 ? 12 : h % 12;
-    const timeText = `${hour12}:${m.toString().padStart(2, '0')} ${ampm}`;
-    sendTime.textContent = timeText;
-
-    const style = isRightAligned === 'start'
-        ? 'text-[#6d87a8]'
-        : 'text-[#9b8dde]';
-
-    sendTime.className = `send-time ltr text-base ${style} pb-[4px] select-none`;
-    const fullDate = msgDate.toLocaleString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true,
-        year: 'numeric',
-    });
-
-    const tooltip = document.createElement('div');
-    tooltip.textContent = fullDate;
-    tooltip.className = `
-        absolute hidden
-        rounded-md bg-[#212936]
-        px-3 py-1 text-sm text-gray-800 dark:text-gray-200
-        shadow-lg border-none
-        whitespace-nowrap
-        pointer-events-none
-        z-1000
-  `.trim().replace(/\s+/g, ' ');
-    document.body.appendChild(tooltip);
-
-    let timerId = null;
-    const showTooltip = (e) => {
-        const rect = sendTime.getBoundingClientRect();
-        tooltip.style.left = `${rect.left + rect.width - 90}px`;
-        tooltip.style.top = `${rect.top + 50}px`;
-        tooltip.classList.remove('hidden');
-        tooltip.classList.add('block');
-        tooltip.style.transform = 'translate(-50%, -100%)';
-    };
-
-    const hideTooltip = () => {
-        if (timerId) clearTimeout(timerId);
-        tooltip.classList.remove('block');
-        tooltip.classList.add('hidden');
-    };
-
-    sendTime.addEventListener('mouseenter', () => {
-        timerId = setTimeout(showTooltip, 800);
-    });
-    sendTime.addEventListener('mouseleave', hideTooltip);
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'relative inline-flex';
-
-    wrapper.appendChild(sendTime);
-
-    return wrapper;
+        const newTick = createTickIcon(isRead);
+        metaEl.appendChild(newTick);
+    }
 }
 
 export function addMessage(msgData) {
@@ -408,21 +443,22 @@ export function addMessage(msgData) {
     const msgId = msgData.id || msgData.tmp_id;
     const text = msgData.text || '';
     const fileUrl = msgData.file || null;
-    const sender = msgData.sender === getSenderUsername() ? 'self' : 'other';
     const isRead = msgData.is_read;
     const timestamp = msgData.timestamp;
     const reply = msgData.reply;
     const reactions = msgData.reactions || [];
 
-    const isRightAligned = msgData.sender === getSenderUsername() ? 'end' : 'start'
-    const sendTime = addSendTimeToMsg(timestamp, isRightAligned);
-    const loading = createLoadingIcon();
-    const wrapper = document.createElement('div');
+    const isRightAligned = msgData.sender === getSenderUsername() ? 'end' : 'start';
+    const sender = msgData.sender === getSenderUsername() ? 'self' : 'other';
+
+    const sendTime = createMessageTimeElement(timestamp, isRightAligned);
+    const loading = createMessageLoadingElement();
     const tick = createTickIcon(isRead);
 
-    wrapper.className = 'chat-msg flex relative justify-' + isRightAligned;
-    let content = null;
+    const wrapper = document.createElement('div');
+    wrapper.className = `chat-msg w-full flex mb-2.5 px-2 ${isRightAligned === 'end' ? 'justify-end' : 'justify-start'}`;
 
+    let content = null;
     if (fileUrl?.trim()) {
         content = createFilePreviewClipboard(msgId, fileUrl, sendTime, tick);
     } else if (text) {
@@ -432,7 +468,7 @@ export function addMessage(msgData) {
     if (content) wrapper.appendChild(content);
 
     const isValidTs = Number.isFinite(timestamp) && timestamp > 0;
-    if (isValidTs) {
+    if (isValidTs && typeof state !== 'undefined') {
         state.beforeTs = timestamp;
     }
 
