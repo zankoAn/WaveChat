@@ -27,8 +27,9 @@ class MessageService:
         path = Path(original_filename)
         stem = path.stem
         ext = path.suffix.lower()
-        random_prefix = uuid.uuid4().hex[:6]
-        final_name = f"{random_prefix}_{stem}{ext}"
+        # random_prefix = uuid.uuid4().hex[:6]
+        # final_name = f"{random_prefix}_{stem}{ext}"
+        final_name = f"{stem}{ext}"
         saved_path = default_storage.save(final_name, ContentFile(file_bytes))
         return default_storage.url(saved_path)
 
