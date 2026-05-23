@@ -4,7 +4,7 @@ from typing import Tuple
 class InputFileValidator:
     MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB
 
-    def validate(self, uploaded_file) -> Tuple[bool, str]:
+    def validate(self, uploaded_file: dict) -> Tuple[bool, str]:
         if not uploaded_file:
             return False, "File not found"
 

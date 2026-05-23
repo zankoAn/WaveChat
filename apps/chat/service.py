@@ -119,8 +119,8 @@ class MessageService:
         self, sender, receiver, data: dict
     ) -> tuple[Message | None, str | None]:
         file_path = ""
-        if data.get("file_upload"):
-            is_valid, error_msg, file_bytes = InputFileValidator().validate(data)
+        if file_upload := data.get("file_upload"):
+            is_valid, error_msg = InputFileValidator().validate(file_upload)
             if not is_valid:
                 return None, error_msg
 
