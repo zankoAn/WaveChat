@@ -10,24 +10,44 @@
         <div class="chat-box-header flex items-center justify-between px-4 py-3 bg-[#0e1621] border-b border-gray-800">
             <div class="text-lg font-semibold">چت آنلاین</div>
             <div class="flex items-center gap-3">
-                <button onclick="ChangeStyle()" class="p-2 rounded-full hover:bg-gray-800/60 transition">
-                    <div class="relative w-5 h-5">
-                        <svg class="lucide lucide-sun absolute inset-0 text-amber-400 transition-all duration-500 ease-in-out"
-                            :class="{ 'rotate-90 scale-0 opacity-0': isDarkMode }" width="20" height="20"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <path
-                                d="M12 1v2 M12 21v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66l-1.41 1.41 M19.07 4.93l-1.41 1.41" />
-                        </svg>
-                        <svg class="lucide lucide-moon absolute inset-0 text-indigo-400 transition-all duration-500 ease-in-out"
-                            :class="{ 'rotate-0 scale-100 opacity-100': isDarkMode, 'scale-0 opacity-0': !isDarkMode }"
-                            width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                    </div>
-                </button>
-                <button id="open-sidebar" class="menu-btn md:hidden text-2xl cursor-pointer">☰</button>
+                <div
+                    class="flex items-center gap-1.5 bg-gray-900/30 dark:bg-black/30 backdrop-blur-xl px-2 py-1.5 rounded-full border border-white/10 dark:border-gray-800/50 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)]">
+
+                    <button onclick="ChangeStyle()"
+                        class="relative p-2.5 rounded-full hover:bg-white/10 dark:hover:bg-gray-800/60 text-gray-400 transition-all duration-300 focus:outline-none group active:scale-95 cursor-pointer">
+
+                        <div class="relative w-5 h-5 flex items-center justify-center">
+                            <svg class="lucide lucide-sun absolute text-amber-400 transition-all duration-500 ease-in-out drop-shadow-[0_0_10px_rgba(251,191,36,0.6)] group-hover:rotate-45"
+                                :class="{ 'rotate-90 scale-0 opacity-0': isDarkMode, 'rotate-0 scale-100 opacity-100': !isDarkMode }"
+                                width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="4"></circle>
+                                <path
+                                    d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+                            </svg>
+
+                            <svg class="lucide lucide-moon absolute text-indigo-400 dark:text-cyan-400 transition-all duration-500 ease-in-out drop-shadow-[0_0_12px_rgba(129,140,248,0.7)]"
+                                :class="{ 'rotate-0 scale-100 opacity-100': isDarkMode, 'scale-0 opacity-0 -rotate-90': !isDarkMode }"
+                                width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+                            </svg>
+                        </div>
+                    </button>
+
+                    <div class="hidden md:hidden max-md:block w-[1px] h-5 bg-white/10 dark:bg-gray-800/80 mx-0.5"></div>
+
+                    <button id="open-sidebar"
+                        class="menu-btn hidden md:hidden max-md:flex p-2.5 rounded-full hover:bg-white/10 dark:hover:bg-gray-800/60 text-cyan-500 dark:text-cyan-400 transition-all duration-300 focus:outline-none active:scale-95 flex-col gap-[4px] justify-center items-end w-10 h-10 cursor-pointer group">
+                        <span
+                            class="w-5 h-[2.5px] bg-current rounded-full transition-all duration-300 group-hover:w-3"></span>
+                        <span
+                            class="w-5 h-[2.5px] bg-current rounded-full transition-all duration-300 shadow-[0_0_8px_currentColor]"></span>
+                        <span
+                            class="w-3 h-[2.5px] bg-current rounded-full transition-all duration-300 group-hover:w-5"></span>
+                    </button>
+
+                </div>
             </div>
         </div>
 
@@ -135,7 +155,6 @@
         </div>
     </div>
 </div>
-<script type="module" src="{%static 'js/theme.js'%}"></script>
 <script src="{% static 'js/config.js' %}"></script>
 <script src="{% static 'js/state.js' %}"></script>
 <script src="{% static 'js/scrollControler.js' %}"></script>
