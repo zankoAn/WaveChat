@@ -49,17 +49,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
                 last_seen=dj_tz.now(),
             )
 
-    async def safe_get_profile(self, username: str | None):
-        if not username or not isinstance(username, str) or not username.strip():
-            return None, None
-
-        username = username.strip()
-        if len(username) < 3 or len(username) > 30:
-            return None, None
-
-        user, profile = await self.register_new_user(username)
-        return user, profile
-
     @staticmethod
     def sanitize(value) -> str:
         if value is None:
@@ -72,9 +61,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         cleaned = re.sub(r"[^a-zA-Z0-9_.-]", "_", value)
         return cleaned[:45]
 
-    def build_group_name(self, u1: str, u2: str) -> str:
+    @staticmethod
+    def build_group_name(u1: str, u2: str) -> str:
         if u1 > u2:
             u1, u2 = u2, u1
+
         combined = f"{u1}:{u2}"
         hash_val = hashlib.sha256(combined.encode()).hexdigest()[:16]
         return f"chat_priv_{hash_val}"
@@ -84,31 +75,24 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         self.receiver = content.get("receiver").lower()
         self.chats = content.get("chats", [])
 
-        if not any((self.sender, self.receiver)):
+        if not self.sender or not self.receiver:
             await self.safe_send_json(
                 {"error": "The sender or receiver has not been sent"}
             )
             await self.close()
             return False
 
-        self.sender_obj, self.sender_profile = await self.safe_get_profile(self.sender)
-        self.receiver_obj, self.receiver_profile = await self.safe_get_profile(
+        self.sender_obj, self.sender_profile = await self.get_user_profile(self.sender)
+        self.receiver_obj, self.receiver_profile = await self.get_user_profile(
             self.receiver
         )
         if not all((self.receiver_obj, self.sender_obj)):
             return False
 
-        if not any((self.sender_obj, self.receiver_obj)):
-            await self.safe_send_json({"error": "User not found"})
-            await self.close()
-            return False
-
-        self.group_name = self.build_group_name(self.sender, self.receiver)
-
         await self.channel_layer.group_add(f"private_{self.sender}", self.channel_name)
 
-        if self.group_name:
-            await self.channel_layer.group_add(self.group_name, self.channel_name)
+        self.group_name = self.build_group_name(self.sender, self.receiver)
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
 
         await self.update_user_profile(
             self.sender_profile,
