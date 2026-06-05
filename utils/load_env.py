@@ -11,4 +11,3 @@ class CONFIG:
     CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS", default="").split(",")  # type: ignore
     CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS", default="").split(",")  # type: ignore
     DEFAULT_RECIVER_ID = env("DEFAULT_RECIVER_ID")
-    LOAD_SIMPLE_LOCALE_MSG_STORAGE = env.bool("DEBUG", default=False)  # type: ignore
