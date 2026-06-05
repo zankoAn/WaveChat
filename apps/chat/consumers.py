@@ -38,10 +38,16 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         if self.group_name:
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
-        private_group = f"private_{self.receiver}"
-        await self.channel_layer.group_send(
-            private_group, {"type": "profile_status", "status": "offline"}
-        )
+        if self.sender:
+            private_chat = f"private_{self.sender}"
+            await self.channel_layer.group_discard(private_chat, self.channel_name)
+
+        if self.receiver:
+            private_chat = f"private_{self.receiver}"
+            await self.channel_layer.group_send(
+                private_chat, {"type": "profile_status", "status": "offline"}
+            )
+
         if self.sender_profile:
             await self.update_user_profile(
                 self.sender_profile,
