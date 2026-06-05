@@ -8,7 +8,6 @@ const $ = {
 
 };
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const ROOT_CHAT = "zanko";
 const CHATS_KEY = "chats";
 const PENDING_MSGS_KEY = "ws_pending";
 

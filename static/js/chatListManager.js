@@ -82,6 +82,8 @@ export function loadLocalChats() {
 }
 
 export function clickOnChat(target) {
+    if (!target) return;
+
     closeSideBar();
 
     document.querySelectorAll('.chat').forEach(chat => {

@@ -22,11 +22,6 @@ export function getSenderUsername() {
 
   if (!localStorage.getItem("receiver")) {
     localStorage.setItem("receiver", user);
-    document.cookie = `receiver=zanko; path=/; max-age=${60 * 60 * 24 * 365}`;
-  }
-
-  if (user === "par" || user === "ram") {
-    document.querySelector(".chat-input-area")?.style.setProperty("padding-bottom", "180px");
   }
 
   return user;
@@ -158,11 +153,6 @@ export function getChatList() {
 
     let list = JSON.parse(data);
     if (!Array.isArray(list)) list = [];
-
-    if (ROOT_CHAT && !list.some((c) => normalizeChatName(c.chat) === ROOT_CHAT)) {
-      list.push({ chat: ROOT_CHAT });
-      localStorage.setItem(CHATS_KEY, JSON.stringify(list));
-    }
 
     return list;
   } catch (err) {
