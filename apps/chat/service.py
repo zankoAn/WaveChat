@@ -110,7 +110,6 @@ class MessageService:
         m = (
             await Message.objects.select_related("receiver", "sender")
             .filter(receiver=current_user, sender__username__iexact=chat, is_read=False)
-            .filter(is_read=False)
             .acount()
         )
         return m
