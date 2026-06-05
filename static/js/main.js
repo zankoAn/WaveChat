@@ -18,9 +18,10 @@ import {
 } from "./chatListManager.js";
 import {
   addMessage,
-  addSendTimeToMsg,
+  createMessageTimeElement,
   createTickIcon,
-  createLoadingIcon,
+  createMessageLoadingElement,
+  updateMessageStatus,
 } from "./MessageBubble.js";
 import { enableLinkifyOnInput } from "./normalize.js";
 
@@ -39,7 +40,7 @@ const setSystemStatus = (text, type = 'warning') => {
       bg: 'bg-amber-950/30',
       border: 'border-amber-500/40',
       shadow: 'shadow-amber-500/20',
-      icon: '⚠️'
+      icon: '⚠'
     },
     error: {
       text: 'text-rose-300',
@@ -53,7 +54,7 @@ const setSystemStatus = (text, type = 'warning') => {
       bg: 'bg-cyan-950/30',
       border: 'border-cyan-500/40',
       shadow: 'shadow-cyan-500/20',
-      icon: 'ℹ️'
+      icon: 'ℹ'
     }
   };
 
@@ -129,7 +130,7 @@ const clearSystemStatus = () => {
 const sentinel = document.getElementById('sentinel');
 
 const observer = new IntersectionObserver((entries) => {
-  if (document.getElementsByClassName("msg").length < 10) return;
+  if (document.getElementsByClassName("msg").length < 5) return;
 
   const entry = entries[0];
 
@@ -175,27 +176,24 @@ export const connectWS = () => {
     const receiver = getReceiverUsername();
     if (!sender || !receiver) return;
 
-    if (receiver === sender) {
-      addChatNameToSideBar(ROOT_CHAT);
-      var activeChat = document.querySelector(`.${ROOT_CHAT}`);
-    } else {
-      var activeChat = document.querySelector(`.${receiver}`);
-    }
+    let activeChat = receiver !== sender ? document.querySelector(`.${receiver}`) : null;
 
     state.ws = new WebSocket(url);
 
     state.ws.onopen = () => {
       isFirstConnectionAttempt = false;
       attempts = 0;
+
       sendWS({
         action: 'initialize',
         sender: sender,
         receiver: receiver
       });
+
       setSystemStatus('اتصال برقرار شد', 'success');
       setTimeout(clearSystemStatus, 1000);
       sendPending();
-      clickOnChat(activeChat);
+      if (activeChat) clickOnChat(activeChat);
     };
 
     state.ws.onmessage = async e => {
@@ -274,6 +272,7 @@ export const connectWS = () => {
             metadata?.querySelector(".message-tick")?.classList.replace("hidden", "inline-block");
             scrollToBottom();
           }
+          removeFromPending(msg.tmp_id);
         }
 
         if (msg.type === "seen_chat") {
@@ -354,45 +353,52 @@ async function onNewMessage(newMsg) {
   }
 }
 
-function addPending(msg) {
-  if (typeof msg === 'string') {
+function addPending(msgObj) {
+  let list = getPendingMessages() || [];
+
+  const isExist = list.some(str => {
     try {
-      const obj = JSON.parse(msg);
-      if (obj?.action !== "new_msg") return;
-    } catch {
-      return;
-    }
-  }
+      return JSON.parse(str).tmp_id === msgObj.tmp_id;
+    } catch { return false; }
+  });
 
-  const msgToSave = typeof msg === 'string' ? msg : JSON.stringify(msg);
-
-  let list = getPendingMessages();
-
-  if (list.some(str => str === msgToSave)) {
-    return;
-  }
-
-  list.push(msgToSave);
+  if (isExist) return;
+  list.push(JSON.stringify(msgObj));
   savePendingMessages(list);
 }
 
-function sendPending() {
-  const msgs = getPendingMessages();
+function removeFromPending(tmpId) {
+  let list = getPendingMessages() || [];
+  const filtered = list.filter(str => {
+    try {
+      return JSON.parse(str).tmp_id !== tmpId;
+    } catch { return true; }
+  });
+  savePendingMessages(filtered);
+}
 
-  if (msgs.length === 0) {
-    return;
-  }
+function sendPending() {
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+
+  const msgs = getPendingMessages() || [];
+  if (msgs.length === 0) return;
 
   msgs.forEach(msgStr => {
     try {
       const msgObj = JSON.parse(msgStr);
-      sendWS(msgObj);
+
+      const fullPayload = {
+        sender: getSenderUsername(),
+        receiver: getReceiverUsername(),
+        chats: getChatList(),
+        ...msgObj
+      };
+
+      state.ws.send(JSON.stringify(fullPayload));
     } catch (e) {
-      console.warn("Invalid pending message format → skipped", e, msgStr);
+      console.warn("Invalid pending message format skipped", e, msgStr);
     }
   });
-
-  clearPendingMessages();
 }
 
 function uuid() {
@@ -417,16 +423,13 @@ export const sendWS = (payload = {}, options = {}) => {
     return false;
   }
 
-  const fullPayload = skipFixed
-    ? payload
-    : { ...fixedFields, ...payload };
+  const fullPayload = skipFixed ? payload : { ...fixedFields, ...payload };
 
-  const messageStr = JSON.stringify(fullPayload);
   if (state.ws?.readyState === WebSocket.OPEN) {
-    state.ws.send(messageStr);
+    state.ws.send(JSON.stringify(fullPayload));
     return true;
-  } else {
-    addPending(messageStr);
+  } else if (payload.action === "new_msg") {
+    addPending(payload);
   }
 
   return false;
@@ -434,18 +437,10 @@ export const sendWS = (payload = {}, options = {}) => {
 
 async function compressFile(file) {
   if (file.type.startsWith('image/')) {
-    const options = {
-      maxSizeMB: 1,
-      maxWidthOrHeight: 800,
-      initialQuality: 0.8,
-      useWebWorker: true,
-    };
+    const options = { maxSizeMB: 1, maxWidthOrHeight: 800, initialQuality: 0.4, useWebWorker: true };
     try {
       const compressedBlob = await imageCompression(file, options);
-      const compressedFile = new File([compressedBlob], file.name, {
-        type: compressedBlob.type,
-      });
-      return compressedFile;
+      return new File([compressedBlob], file.name, { type: compressedBlob.type });
     } catch (error) {
       console.log(error);
     }
@@ -467,18 +462,13 @@ async function uploadLargeFile(file, tmpId) {
     formData.append('receiver', getReceiverUsername());
     formData.append('tmpId', tmpId);
 
-    const res = await fetch('/chat/upload/', {
-      method: 'POST',
-      body: formData,
-    });
-
+    const res = await fetch('/chat/upload/', { method: 'POST', body: formData });
     if (!res.ok) {
       const txt = await res.text();
       console.error('Server error:', txt);
       throw new Error(`Upload failed: ${res.status} - ${txt}`);
     }
-    const data = await res.json();
-    return data;
+    return await res.json();
   } catch (e) {
     if (e.name === 'AbortError') {
       console.warn('Upload cancelled');
@@ -507,7 +497,8 @@ const sendMessage = async () => {
     reply_id: state.replyId,
     tmp_id: tmpId,
     sender: getSenderUsername(),
-    receiver: getReceiverUsername()
+    receiver: getReceiverUsername(),
+    timestamp: Math.floor(Date.now() / 1000)
   };
 
   if (state.replyId) {
@@ -522,40 +513,41 @@ const sendMessage = async () => {
       id: state.replyId,
       preview: preview.slice(0, 30) + (preview.length > 30 ? "…" : "")
     };
-
     closeReply();
   }
 
+  const wrapper = addMessage(msgObj);
+  wrapper.className = "chat-msg flex relative justify-end";
+  $.logs.appendChild(wrapper);
+  scrollToBottom();
+  UpdateChatMetadata(msgObj.receiver, msgObj.text);
+
+
   if (!file) {
-    const wrapper = addMessage(msgObj);
-    wrapper.className = "chat-msg flex relative justify-end";
-    $.logs.appendChild(wrapper);
-    scrollToBottom();
-
-    wrapper
-      .querySelector(".msg-loading")
-      ?.classList.replace("hidden", "inline-block");
-
-    UpdateChatMetadata(msgObj.receiver, msgObj.text);
-    sendWS(msgObj, { skipPending: true });
+    const sent = sendWS(msgObj, { skipFixed: true });
+    if (!sent) {
+      console.log("Message queued locally. Offline mode.");
+    }
     return;
   }
 
-  const uploadPromise = uploadLargeFile(file, tmpId);
-  uploadPromise
-    .then(uploadRes => {
+  try {
+    const uploadPromise = uploadLargeFile(file, tmpId);
+    if (uploadRes && uploadRes.url) {
       msgObj.file = uploadRes.url;
       msgObj.name = file.name;
 
-      const wrapper = addMessage(msgObj);
-      wrapper.className = "chat-msg flex relative justify-end";
-      $.logs.lastChild.replaceWith(wrapper)
+      const updatedWrapper = addMessage(msgObj);
+      updatedWrapper.className = "chat-msg flex relative justify-end";
+      $.logs.lastChild.replaceWith(updatedWrapper);
       scrollToBottom();
       state.pendingFile = null;
-    })
-    .catch(err => {
-      console.error("Upload failed:", err);
-    });
+
+      sendWS(msgObj);
+    }
+  } catch (err) {
+    console.error("Upload failed layout broken:", err);
+  }
 
 };
 
@@ -573,9 +565,9 @@ $.input.addEventListener('keydown', async e => {
 
 const clipboardDeps = {
   setSystemStatus,
-  addSendTimeToMsg,
+  createMessageTimeElement,
   createTickIcon,
-  createLoadingIcon,
+  createMessageLoadingElement,
   sendMessage,
 };
 
@@ -619,7 +611,6 @@ clsoeBtn?.addEventListener('click', () => {
 
 openBtn?.addEventListener('click', () => {
   document.getElementById('sidebar').classList.add('active');
-
   if (sidebar.classList.contains('-translate-x-full')) {
     sidebar.classList.remove('-translate-x-full');
     sidebar.classList.add('translate-x-0');
@@ -631,6 +622,14 @@ openBtn?.addEventListener('click', () => {
 
 const textarea = document.getElementById('chat-input-text');
 enableLinkifyOnInput(textarea);
+
+window.addEventListener('online', () => {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    sendPending();
+  } else {
+    connectWS();
+  }
+});
 
 document.addEventListener('DOMContentLoaded', () => {
   const sender = getSenderUsername();
