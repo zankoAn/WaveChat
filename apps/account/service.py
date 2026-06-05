@@ -42,20 +42,19 @@ class UserManager(ProfileManager):
         user = User.objects.filter(username__iexact=username)
         return user.first()
 
-    async def register_new_user(self, username):
+    def register_new_user(self, username, password):
         username = username.lower()
         user = (
-            await User.objects.select_related("profile")
+            User.objects.select_related("profile")
             .filter(username__iexact=username)
-            .afirst()
+            .first()
         )
         if not user:
-            new_user = await User.objects.acreate_user(
+            new_user = User.objects.create_user(
                 username=username,
-                password=make_password(username),
+                password=password,
             )
-            profile = await self.create_profile(new_user)
-            return new_user, profile
-
-        profile = await self.aget_user_profile(user)
-        return user, profile
+            self.create_profile(new_user)
+            return new_user
+        else:
+            return None
