@@ -73,6 +73,7 @@ function handleImageClick(e) {
     document.body.style.overflow = 'hidden';
     state.IsImageOpen = true;
 }
+
 function createCustomAudioPlayer(url, filename) {
     const playerContainer = document.createElement('div');
     playerContainer.className = 'w-full max-w-[340px] p-4 rounded-2xl bg-gradient-to-br from-slate-900/95 via-slate-900/85 to-slate-950/60 border border-white/10 backdrop-blur-xl shadow-2xl flex flex-col gap-3.5 rtl select-none group/player transition-all duration-300 hover:border-indigo-500/30 relative';
