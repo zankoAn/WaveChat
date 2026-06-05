@@ -3,10 +3,10 @@ from apps.account.models import Profile, User
 
 class ProfileManager:
     @staticmethod
-    async def aget_user_profile(user):
+    async def aget_user_profile(username):
         profile = (
             await Profile.objects.select_related("user", "active_chat")
-            .filter(user=user)
+            .filter(user__username=username)
             .afirst()
         )
         return profile
@@ -28,8 +28,8 @@ class ProfileManager:
         await profile.arefresh_from_db()
 
     @staticmethod
-    async def create_profile(user):
-        profile = await Profile.objects.acreate(user=user, status=Profile.Status.ONLINE)
+    def create_profile(user):
+        profile = Profile.objects.create(user=user, status=Profile.Status.ONLINE)
         return profile
 
 
@@ -39,6 +39,10 @@ class UserManager(ProfileManager):
         username = username.lower()
         user = User.objects.filter(username__iexact=username)
         return user.first()
+
+    async def get_user_profile(self, username):
+        profile = await self.aget_user_profile(username)
+        return profile.user, profile
 
     def register_new_user(self, username, password):
         username = username.lower()
