@@ -42,7 +42,7 @@ class UserManager(ProfileManager):
 
     async def get_user_profile(self, username):
         profile = await self.aget_user_profile(username)
-        return profile.user, profile
+        return profile
 
     def register_new_user(self, username, password):
         username = username.lower()

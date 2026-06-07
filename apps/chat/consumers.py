@@ -1,5 +1,5 @@
 import hashlib
-import re
+from dataclasses import dataclass
 
 from channels.generic.websocket import (
     AsyncJsonWebsocketConsumer,
@@ -17,55 +17,36 @@ User = get_user_model()
 logger = BaseLogger(__name__)
 
 
+@dataclass
+class ChatParticipant:
+    username: str = ""
+    profile: Profile = None
+    user: "User" = None
+
+
 class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
     def __init__(self):
         super().__init__()
         self.chats = []
         self.msg_service = MessageService()
         self.group_name = None
-        self.sender = None
-        self.receiver = None
-        self.sender_obj = None
-        self.sender_profile = None
-        self.receiver_obj = None
-        self.receiver_profile = None
         self.msg_type = ""
+        self.sender = ChatParticipant()
+        self.receiver = ChatParticipant()
+        self.active_groups = set()
 
     async def connect(self):
         await self.accept()
 
     async def disconnect(self, code):
-        if self.group_name:
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.remove_all_groups()
 
-        if self.sender:
-            private_chat = f"private_{self.sender}"
-            await self.channel_layer.group_discard(private_chat, self.channel_name)
-
-        if self.receiver:
-            private_chat = f"private_{self.receiver}"
-            await self.channel_layer.group_send(
-                private_chat, {"type": "profile_status", "status": "offline"}
-            )
-
-        if self.sender_profile:
+        if self.sender.profile:
             await self.update_user_profile(
-                self.sender_profile,
+                self.sender.profile,
                 status=Profile.Status.OFFLINE,
                 last_seen=dj_tz.now(),
             )
-
-    @staticmethod
-    def sanitize(value) -> str:
-        if value is None:
-            return "unknown"
-
-        value = str(value).strip()
-        if not value:
-            return "empty"
-
-        cleaned = re.sub(r"[^a-zA-Z0-9_.-]", "_", value)
-        return cleaned[:45]
 
     @staticmethod
     def build_group_name(u1: str, u2: str) -> str:
@@ -76,36 +57,62 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         hash_val = hashlib.sha256(combined.encode()).hexdigest()[:16]
         return f"chat_priv_{hash_val}"
 
-    async def initialize(self, content):
-        self.sender = content.get("sender").lower()
-        self.receiver = content.get("receiver").lower()
-        self.chats = content.get("chats", [])
+    async def add_to_group(self, group_name):
+        await self.channel_layer.group_add(group_name, self.channel_name)
+        self.active_groups.add(group_name)
 
-        if not self.sender or not self.receiver:
+    async def remove_all_groups(self):
+        for group in list(self.active_groups):
+            await self.channel_layer.group_discard(group, self.channel_name)
+
+        self.active_groups.clear()
+
+    async def remove_chat_groups(self):
+        if self.group_name:
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            self.active_groups.discard(self.group_name)
+
+    async def initialize(self, content):
+        self.chats = content.get("chats", [])
+        sender_username = content.get("sender").lower()
+        receiver_username = content.get("receiver").lower()
+        if not sender_username or not receiver_username:
             await self.safe_send_json(
                 {"error": "The sender or receiver has not been sent"}
             )
             await self.close()
             return False
 
-        self.sender_obj, self.sender_profile = await self.get_user_profile(self.sender)
-        self.receiver_obj, self.receiver_profile = await self.get_user_profile(
-            self.receiver
-        )
-        if not all((self.receiver_obj, self.sender_obj)):
-            return False
+        if not self.sender.username or self.sender.username != sender_username:
+            sender_profile = await self.get_user_profile(sender_username)
+            if not sender_profile:
+                return False
 
-        await self.channel_layer.group_add(f"private_{self.sender}", self.channel_name)
+            self.sender = ChatParticipant(
+                sender_username, sender_profile, sender_profile.user
+            )
+            await self.add_to_group(f"private_{sender_username}")
 
-        self.group_name = self.build_group_name(self.sender, self.receiver)
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        if not self.receiver.username or self.receiver.username != receiver_username:
+            receiver_profile = await self.get_user_profile(receiver_username)
+            if not receiver_profile:
+                await self.safe_send_json({"error": "Receiver not found"})
+                return False
 
-        await self.update_user_profile(
-            self.sender_profile,
-            status=Profile.Status.ONLINE,
-            active_chat=self.receiver_obj,
-            last_seen=dj_tz.now(),
-        )
+            await self.remove_chat_groups()
+
+            self.receiver = ChatParticipant(
+                receiver_username, receiver_profile, receiver_profile.user
+            )
+            self.group_name = self.build_group_name(sender_username, receiver_username)
+            await self.add_to_group(self.group_name)
+            await self.update_user_profile(
+                profile=self.sender.profile,
+                status=Profile.Status.ONLINE,
+                active_chat=receiver_profile.user,
+                last_seen=dj_tz.now(),
+            )
+
         return True
 
     async def receive_json(self, content):
@@ -120,7 +127,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
             self.msg_type = "initialize_msg"
             await self.handle_initialize()
             await self.channel_layer.group_send(
-                f"private_{self.sender}", {"type": "unread_count_per_chat"}
+                f"private_{self.sender.username}", {"type": "unread_count_per_chat"}
             )
 
         if action == "get_history":
@@ -145,7 +152,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
     async def handle_initialize(self, limit=1):
         chats = [item["chat"].lower() for item in self.chats]
         msgs = await self.msg_service.aget_last_messages_per_chat(
-            self.sender, chats, limit
+            self.sender.username, chats, limit
         )
         async for msg in msgs:
             serialized_data = await self.serializer(msg)
@@ -191,29 +198,30 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
 
     async def mark_messages_as_seen(self):
         has_incoming = await self.msg_service.amark_messages_as_read(
-            sender=self.receiver_obj, receiver=self.sender_obj
+            sender=self.receiver.profile.user_id, receiver=self.sender.profile.user_id
         )
         if has_incoming:
             await self.channel_layer.group_send(
-                f"private_{self.receiver}", {"type": "seen_chat"}
+                f"private_{self.receiver.username}", {"type": "seen_chat"}
             )
 
         if (
-            self.receiver_profile.status == Profile.Status.ONLINE
-            and self.receiver_profile.active_chat == self.sender_obj
+            self.receiver.profile.status == Profile.Status.ONLINE
+            and self.receiver.profile.active_chat == self.sender.profile.user_id
         ):
             has_outgoing = await self.msg_service.amark_messages_as_read(
-                sender=self.sender_obj, receiver=self.receiver_obj
+                sender=self.sender.profile.user_id,
+                receiver=self.receiver.profile.user_id,
             )
             if has_outgoing:
                 await self.channel_layer.group_send(
-                    f"private_{self.sender}", {"type": "seen_chat"}
+                    f"private_{self.sender.username}", {"type": "seen_chat"}
                 )
 
     async def get_chat_history(self, before_ts=0, limit=10):
         await self.mark_messages_as_seen()
         messages = await self.msg_service.aget_chat_history(
-            self.sender_obj, self.receiver_obj, limit, before_ts
+            self.sender.username, self.receiver.username, limit, before_ts
         )
         async for msg in messages:
             serialized_data = await self.serializer(msg)
@@ -227,7 +235,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
             "type": "ack_msg",
             "payload": {
                 "type": "reaction_update",
-                "reaction": {"sender": self.sender, "emoji": emoji},
+                "reaction": {"sender": self.sender.username, "emoji": emoji},
                 "status": action_type,
                 "id": msg_id,
             },
@@ -236,19 +244,23 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
             msg = await self.msg_service.aget_message_by_id(int(msg_id))
             if msg:
                 await MessageReaction.objects.acreate(
-                    message=msg, user=self.sender_obj, emoji=emoji
+                    message=msg, user=self.sender.user, emoji=emoji
                 )
-            await self.channel_layer.group_send(f"private_{self.receiver}", data)
+            await self.channel_layer.group_send(
+                f"private_{self.receiver.username}", data
+            )
 
         if action_type == "del":
             await MessageReaction.objects.filter(
                 message__id=msg_id, emoji=emoji
             ).adelete()
-            await self.channel_layer.group_send(f"private_{self.receiver}", data)
+            await self.channel_layer.group_send(
+                f"private_{self.receiver.username}", data
+            )
 
     async def save_new_msg(self, data):
         msg, error = await self.msg_service.create_new_message(
-            self.sender_obj, self.receiver_obj, data
+            self.sender.user, self.receiver.user, data
         )
         if error:
             await self.send_json({"type": "error", "message": msg})
@@ -257,7 +269,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         serialized_data = await self.serializer(msg)
 
         await self.channel_layer.group_send(
-            f"private_{self.sender}",
+            f"private_{self.sender.username}",
             {
                 "type": "ack_msg",
                 "payload": {
@@ -269,7 +281,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
             },
         )
         await self.channel_layer.group_send(
-            f"private_{self.receiver}", {"type": "ack_msg", "payload": serialized_data}
+            f"private_{self.receiver.username}",
+            {"type": "ack_msg", "payload": serialized_data},
         )
         await self.mark_messages_as_seen()
 
@@ -293,7 +306,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         data = {
             "type": "user_status",
             "status": event["status"],
-            "user": self.receiver,
+            "user": self.receiver.username,
         }
         await self.safe_send_json(data)
 
@@ -305,6 +318,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         chats = [item["chat"].lower() for item in self.chats]
         for chat in chats:
             data["chats"][chat] = await self.msg_service.aget_unread_count(
-                self.sender_obj, chat
+                self.sender.profile.user_id, chat
             )
         await self.safe_send_json(data)

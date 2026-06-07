@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -90,8 +89,8 @@ class MessageService:
         qs = (
             Message.objects.select_related("reply_to_message_id", "receiver", "sender")
             .filter(
-                Q(sender=sender, receiver=receiver)
-                | Q(sender=receiver, receiver=sender)
+                Q(sender__username=sender, receiver__username=receiver)
+                | Q(sender__username=receiver, receiver__username=sender)
             )
             .order_by("-created")
         )
