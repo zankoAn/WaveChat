@@ -6,9 +6,12 @@ __pypackages__/
 .vscode
 uv.lock
 
-frontend/src/static/images/
-config/.env
+.env
 
 static_root/
 media/*
-!/media/products/
+
+**/migrations/
+
+db.*
+tailwindcss-linux-x64
