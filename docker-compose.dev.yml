@@ -1,0 +1,53 @@
+services:
+  backend:
+    build: .
+    container_name: chat-backend
+    restart: on-failure
+    command: sh entrypoint.sh
+    environment:
+      - RELOAD=true
+    volumes:
+      - .:/app
+      - static_volume:/app/static_root/
+      - media_volume:/app/media/
+      - /app/.venv/
+    networks:
+      - chat
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:alpine
+    container_name: chat-redis
+    networks:
+      - chat
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 2s
+      timeout: 3s
+      retries: 3
+      start_period: 1s
+
+  webserver:
+    image: nginx:alpine
+    container_name: chat-webserver
+    restart: on-failure
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/chat.conf:/etc/nginx/sites-available/chat.conf:ro
+      - media_volume:/usr/share/nginx/media:ro
+      - static_volume:/usr/share/nginx/static:ro
+    networks:
+      - chat
+    ports:
+      - 80:80
+    depends_on:
+      - backend
+
+volumes:
+  static_volume:
+  media_volume:
+
+networks:
+  chat:

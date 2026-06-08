@@ -1,0 +1,16 @@
+.venv/
+.git/
+.gitignore
+__pypackages__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*_versions
+*.vscode
+*.mypy_cache
+.pytest_cache/
+.coverage
+db.sqlite3
+media/
+static_root/
