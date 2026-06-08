@@ -36,6 +36,10 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         self.active_groups = set()
 
     async def connect(self):
+        if not self.scope["user"].is_authenticated:
+            await self.close()
+            return
+
         await self.accept()
 
     async def disconnect(self, code):
@@ -74,24 +78,24 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
 
     async def initialize(self, content):
         self.chats = content.get("chats", [])
-        sender_username = content.get("sender").lower()
+        sender = self.scope["user"]
         receiver_username = content.get("receiver").lower()
-        if not sender_username or not receiver_username:
+        if not sender.is_active or not receiver_username:
             await self.safe_send_json(
                 {"error": "The sender or receiver has not been sent"}
             )
             await self.close()
             return False
 
-        if not self.sender.username or self.sender.username != sender_username:
-            sender_profile = await self.get_user_profile(sender_username)
+        if not self.sender.username or self.sender.username != sender.username:
+            sender_profile = await self.get_user_profile(sender.username)
             if not sender_profile:
                 return False
 
             self.sender = ChatParticipant(
-                sender_username, sender_profile, sender_profile.user
+                sender.username, sender_profile, sender_profile.user
             )
-            await self.add_to_group(f"private_{sender_username}")
+            await self.add_to_group(f"private_{sender.username}")
 
         if not self.receiver.username or self.receiver.username != receiver_username:
             receiver_profile = await self.get_user_profile(receiver_username)
@@ -104,7 +108,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
             self.receiver = ChatParticipant(
                 receiver_username, receiver_profile, receiver_profile.user
             )
-            self.group_name = self.build_group_name(sender_username, receiver_username)
+            self.group_name = self.build_group_name(sender.username, receiver_username)
             await self.add_to_group(self.group_name)
             await self.update_user_profile(
                 profile=self.sender.profile,

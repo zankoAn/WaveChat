@@ -1,5 +1,6 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -11,6 +12,7 @@ from apps.chat.validators import InputFileValidator
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@login_required
 def upload_file(request):
     file = request.FILES.get("file")
     if not file:
@@ -20,16 +22,15 @@ def upload_file(request):
     if not _is_valid:
         return JsonResponse({"error": _msg}, status=413)
 
-    sender = request.POST.get("sender")
+    sender = request.user
     receiver = request.POST.get("receiver")
     tmp_id = request.POST.get("tmpId")
 
-    sender_obj = UserManager().get_user(username=sender)
     receiver_obj = UserManager().get_user(username=receiver)
 
     data = {"file_upload": file}
     msg, error = async_to_sync(MessageService().create_new_message)(
-        sender_obj, receiver_obj, data
+        sender, receiver_obj, data
     )
     if error:
         return JsonResponse({"success": False, "msg": error}, status=400)
@@ -39,7 +40,7 @@ def upload_file(request):
         "type": "new_msg",
         "id": msg.id,
         "text": msg.text,
-        "sender": sender,
+        "sender": sender.username,
         "receiver": receiver,
         "file": msg.file,
         "reply": None,
