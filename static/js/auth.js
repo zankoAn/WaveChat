@@ -87,7 +87,7 @@ function finalizeAuth(username) {
     state.setActiveChat(getReceiverUsername(), true);
     state.setActiveChat(username, true);
 
-    sendWS({ action: "initialize", chats: [{ chat: username }], receiver: username, sender: username });
+    sendWS({ action: "initialize", chats: [{ chat: username }], receiver: username });
     loadLocalChats();
     connectWS();
 }

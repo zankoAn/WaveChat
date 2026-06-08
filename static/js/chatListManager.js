@@ -37,7 +37,7 @@ chatNameInput.addEventListener('keydown', e => {
         };
         addToChatList(chatName);
         addChatNameToSideBar(chatName);
-        sendWS({ action: "initialize", chats: [{ chat: chatName }], receiver: chatName, sender: getSenderUsername() });
+        sendWS({ action: "initialize", chats: [{ chat: chatName }], receiver: chatName });
     }
 })
 
@@ -53,7 +53,7 @@ saveBtn.onclick = () => {
     };
     addToChatList(chatName);
     addChatNameToSideBar(chatName);
-    sendWS({ action: "initialize", chats: [{ chat: chatName }], receiver: chatName, sender: getSenderUsername() });
+    sendWS({ action: "initialize", chats: [{ chat: chatName }], receiver: chatName });
 };
 
 export function addChatNameToSideBar(chatName) {

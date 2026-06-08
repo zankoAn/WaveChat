@@ -52,8 +52,7 @@ function sendReactionToServer(emoji, msgIdOrTmp, action = "add") {
         type: action,
         message_id: getRealMessageId(msgIdOrTmp),
         emoji,
-        receiver: getReceiverUsername(),
-        sender: getSenderUsername(),
+        receiver: getReceiverUsername()
     };
     sendWS(payload);
 }

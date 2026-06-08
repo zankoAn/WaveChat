@@ -184,11 +184,7 @@ export const connectWS = () => {
       isFirstConnectionAttempt = false;
       attempts = 0;
 
-      sendWS({
-        action: 'initialize',
-        sender: sender,
-        receiver: receiver
-      });
+      sendWS({ action: 'initialize', receiver: receiver });
 
       setSystemStatus('اتصال برقرار شد', 'success');
       setTimeout(clearSystemStatus, 1000);
@@ -388,7 +384,6 @@ function sendPending() {
       const msgObj = JSON.parse(msgStr);
 
       const fullPayload = {
-        sender: getSenderUsername(),
         receiver: getReceiverUsername(),
         chats: getChatList(),
         ...msgObj
@@ -414,12 +409,11 @@ export const sendWS = (payload = {}, options = {}) => {
   const { skipFixed = false } = options;
 
   const fixedFields = {
-    sender: getSenderUsername(),
     receiver: getReceiverUsername(),
     chats: getChatList(),
   };
-  if (!fixedFields.sender || !fixedFields.receiver) {
-    console.warn("Cannot send WS: sender or receiver missing", payload);
+  if (!fixedFields.receiver) {
+    console.warn("Cannot send WS: receiver missing", payload);
     return false;
   }
 
@@ -458,7 +452,6 @@ async function uploadLargeFile(file, tmpId) {
     const compressed = await compressFile(file);
     const formData = new FormData();
     formData.append('file', compressed);
-    formData.append('sender', getSenderUsername());
     formData.append('receiver', getReceiverUsername());
     formData.append('tmpId', tmpId);
 
@@ -496,7 +489,6 @@ const sendMessage = async () => {
     text,
     reply_id: state.replyId,
     tmp_id: tmpId,
-    sender: getSenderUsername(),
     receiver: getReceiverUsername(),
     timestamp: Math.floor(Date.now() / 1000)
   };
@@ -532,7 +524,7 @@ const sendMessage = async () => {
   }
 
   try {
-    const uploadPromise = uploadLargeFile(file, tmpId);
+    const uploadRes = await uploadLargeFile(file, tmpId);
     if (uploadRes && uploadRes.url) {
       msgObj.file = uploadRes.url;
       msgObj.name = file.name;
