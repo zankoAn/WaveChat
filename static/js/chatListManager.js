@@ -37,7 +37,7 @@ chatNameInput.addEventListener('keydown', e => {
         };
         addToChatList(chatName);
         addChatNameToSideBar(chatName);
-        sendWS({ action: "initialize", chats: [{ chat: chatName }], receiver: chatName });
+        sendWS({ action: "add_new_chat", chats: [{ chat: chatName }], receiver: chatName });
     }
 })
 
@@ -53,7 +53,7 @@ saveBtn.onclick = () => {
     };
     addToChatList(chatName);
     addChatNameToSideBar(chatName);
-    sendWS({ action: "initialize", chats: [{ chat: chatName }], receiver: chatName });
+    sendWS({ action: "add_new_chat", chats: [{ chat: chatName }], receiver: chatName });
 };
 
 export function addChatNameToSideBar(chatName) {
@@ -95,6 +95,10 @@ export function clickOnChat(target) {
     target.querySelector('.chat-unread-badge').classList.add("hidden");
     const chatName = target.dataset.value;
 
+    if (state.getActiveChat !== chatName) {
+        sendWS({ action: "leave_chat", chat: state.getActiveChat });
+    }
+
     setCurrentChatPartner(chatName);
     state.setActiveChat(chatName, true);
 
@@ -102,7 +106,7 @@ export function clickOnChat(target) {
     $.logs.innerHTML = '';
     $.logs.appendChild(first);
     state.clearUnreadChat(chatName);
-    sendWS({ action: "get_history", chat: chatName });
+    sendWS({ action: "join_chat", chat: chatName });
     scrollToBottom();
 }
 
@@ -170,7 +174,6 @@ export function createChatItem(chatName) {
         syncChatsWithOrder();
     });
 
-
     const content = document.createElement('div');
     content.className = 'flex-1 min-w-0 flex flex-col gap-y-2.5';
 
@@ -237,6 +240,7 @@ export function createChatItem(chatName) {
         e.stopPropagation();
         li.remove();
         deleteFromChatList(chatName);
+        sendWS({ action: "leave_chat", chat: chatName });
     })
     li.appendChild(right);
 

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from asgiref.sync import sync_to_async
+from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.db.models import Case, F, Q, When, Window
 from django.db.models.fields.files import default_storage
@@ -35,7 +36,7 @@ class MessageService:
     @staticmethod
     async def amark_messages_as_read(sender, receiver) -> int:
         updated_count = await Message.objects.filter(
-            receiver=receiver, sender=sender, is_read=False
+            sender=sender, receiver=receiver, is_read=False
         ).aupdate(is_read=True)
         return updated_count
 
@@ -144,3 +145,29 @@ class MessageService:
             is_read=False,
         )
         return msg, None
+
+
+class ChatStateManager:
+    @staticmethod
+    def set_online_status(username: str, is_online: bool):
+        key = f"user_online:{username}"
+        if is_online:
+            cache.set(key, True, timeout=60)
+        else:
+            cache.delete(key)
+
+    @staticmethod
+    def get_online_status(username: str) -> bool:
+        return bool(cache.get(f"user_online:{username}"))
+
+    @staticmethod
+    def set_active_chat(username: str, target_username: str):
+        key = f"active_chat:{username}"
+        if target_username:
+            cache.set(key, target_username, timeout=60)
+        else:
+            cache.delete(key)
+
+    @staticmethod
+    def get_active_chat(username: str):
+        return cache.get(f"active_chat:{username}")

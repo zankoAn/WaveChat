@@ -5,12 +5,11 @@ from channels.generic.websocket import (
     AsyncJsonWebsocketConsumer,
 )
 from django.contrib.auth import get_user_model
-from django.utils import timezone as dj_tz
 
 from apps.account.models import Profile
 from apps.account.service import UserManager
 from apps.chat.models import MessageReaction
-from apps.chat.service import MessageService
+from apps.chat.service import ChatStateManager, MessageService
 from utils.custom_logger import BaseLogger
 
 User = get_user_model()
@@ -34,6 +33,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         self.sender = ChatParticipant()
         self.receiver = ChatParticipant()
         self.active_groups = set()
+        self.cache_manager = ChatStateManager()
 
     async def connect(self):
         if not self.scope["user"].is_authenticated:
@@ -42,15 +42,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
 
         await self.accept()
 
-    async def disconnect(self, code):
+    async def disconnect(self, code=0):
         await self.remove_all_groups()
-
-        if self.sender.profile:
-            await self.update_user_profile(
-                self.sender.profile,
-                status=Profile.Status.OFFLINE,
-                last_seen=dj_tz.now(),
-            )
+        await self.channel_layer.group_send(
+            f"private_{self.receiver.username}",
+            {"type": "profile_status", "status": "offline"},
+        )
+        self.cache_manager.set_online_status(self.sender.username, False)
 
     @staticmethod
     def build_group_name(u1: str, u2: str) -> str:
@@ -76,10 +74,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
             self.active_groups.discard(self.group_name)
 
-    async def initialize(self, content):
-        self.chats = content.get("chats", [])
+    async def initialize(self, receiver_username):
         sender = self.scope["user"]
-        receiver_username = content.get("receiver").lower()
         if not sender.is_active or not receiver_username:
             await self.safe_send_json(
                 {"error": "The sender or receiver has not been sent"}
@@ -110,32 +106,35 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
             )
             self.group_name = self.build_group_name(sender.username, receiver_username)
             await self.add_to_group(self.group_name)
-            await self.update_user_profile(
-                profile=self.sender.profile,
-                status=Profile.Status.ONLINE,
-                active_chat=receiver_profile.user,
-                last_seen=dj_tz.now(),
-            )
-
         return True
 
     async def receive_json(self, content):
         action = content.get("action")
+        receiver = content.get("receiver").lower()
+        sender = self.sender.username
+        self.chats = content.get("chats", [])
         scroll_type = "end_msgs"
         self.msg_type = "history_msg"
 
-        if not await self.initialize(content):
+        self.cache_manager.set_online_status(sender, True)
+
+        if not await self.initialize(receiver):
             return
 
-        if action == "initialize":
+        if action in ["initialize", "add_new_chat"]:
             self.msg_type = "initialize_msg"
             await self.handle_initialize()
             await self.channel_layer.group_send(
-                f"private_{self.sender.username}", {"type": "unread_count_per_chat"}
+                f"private_{sender}", {"type": "unread_count_per_chat"}
             )
 
-        if action == "get_history":
+        if action == "join_chat":
+            self.cache_manager.set_active_chat(sender, receiver)
             await self.get_chat_history()
+
+        if action == "leave_chat":
+            self.cache_manager.set_online_status(sender, False)
+            self.cache_manager.set_active_chat(sender, receiver)
 
         if action == "load_more_history":
             before_ts = content.get("beforeTs", 0)
@@ -204,14 +203,15 @@ class ChatConsumer(AsyncJsonWebsocketConsumer, UserManager):
         has_incoming = await self.msg_service.amark_messages_as_read(
             sender=self.receiver.profile.user_id, receiver=self.sender.profile.user_id
         )
+        receiver = self.receiver.username
         if has_incoming:
             await self.channel_layer.group_send(
-                f"private_{self.receiver.username}", {"type": "seen_chat"}
+                f"private_{receiver}", {"type": "seen_chat"}
             )
 
         if (
-            self.receiver.profile.status == Profile.Status.ONLINE
-            and self.receiver.profile.active_chat == self.sender.profile.user_id
+            self.cache_manager.get_online_status(receiver)
+            and self.cache_manager.get_active_chat(receiver) == self.sender.username
         ):
             has_outgoing = await self.msg_service.amark_messages_as_read(
                 sender=self.sender.profile.user_id,

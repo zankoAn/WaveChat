@@ -448,8 +448,8 @@ export function addMessage(msgData) {
     const reply = msgData.reply;
     const reactions = msgData.reactions || [];
 
-    const isRightAligned = msgData.sender === getSenderUsername() ? 'end' : 'start';
-    const sender = msgData.sender === getSenderUsername() ? 'self' : 'other';
+    const isRightAligned = msgData.receiver === getReceiverUsername() ? 'end' : 'start';
+    const sender = msgData.receiver === getReceiverUsername() ? 'self' : 'other';
 
     const sendTime = createMessageTimeElement(timestamp, isRightAligned);
     const loading = createMessageLoadingElement();

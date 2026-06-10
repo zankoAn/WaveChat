@@ -47,6 +47,10 @@ class AppState {
         return this.#unreadCount[chat] ?? 0;
     }
 
+    get getActiveChat() {
+        return Object.keys(this.#activeChats).find(chat => this.#activeChats[chat] === true) || null;
+    }
+
     // setters
     set ws(v) { this.#ws = v; }
     set systemStatusMsg(v) { this.#systemStatusMsg = v; }
@@ -80,7 +84,7 @@ class AppState {
     }
 
     clearUnreadChat(chat) {
-        this.#unreadCount = { [chat]: 0 }
+        this.#unreadCount[chat] = 0;
     }
 }
 
