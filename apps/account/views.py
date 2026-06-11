@@ -25,8 +25,6 @@ class ApiRegisterView(View):
             if not user:
                 return JsonResponse({"error": "Username allready exists."}, status=400)
 
-            login(request, user)
-
             return JsonResponse(
                 {"message": "New user successfully created"}, status=201
             )
