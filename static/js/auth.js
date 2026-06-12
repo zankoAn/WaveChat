@@ -7,6 +7,7 @@ const tabRegister = document.getElementById("tab-register");
 const formLogin = document.getElementById("form-login");
 const formRegister = document.getElementById("form-register");
 const authError = document.getElementById("auth-error");
+const authSuccess = document.getElementById("auth-success");
 const modal = document.getElementById("userModal");
 
 const loginUsernameElem = document.getElementById("login-username");
@@ -50,12 +51,27 @@ function showError(message) {
 function hideError() {
     authError.textContent = "";
     authError.classList.add("hidden");
+    authSuccess.classList.add("hidden");
 
     [loginUsernameElem, registerUsernameElem].forEach(elem => {
         elem.classList.remove("border-red-500", "focus:border-red-500");
     });
 }
 
+function showSuccess(message) {
+    authSuccess.textContent = message;
+    authSuccess.classList.remove("hidden", "text-red-500");
+    authSuccess.classList.add("text-green-500");
+}
+
+function switchToLogin() {
+    tabLogin.click();
+    loginUsernameElem.value = registerUsernameElem.value;
+    registerUsernameElem.value = "";
+    registerPasswordElem.value = "";
+    registerConfirmedPasswordElem.value = "";
+    loginPasswordElem.focus();
+}
 
 async function handleAuthRequest(endpoint, payload) {
     const url = `${window.location.origin}/auth/${endpoint}/`;
@@ -91,8 +107,6 @@ function finalizeAuth(username) {
     loadLocalChats();
     connectWS();
 }
-
-// forms and validation
 
 async function processLogin() {
     hideError();
@@ -147,7 +161,8 @@ async function processRegister() {
     const payload = { username, password, confirmed_password };
     const success = await handleAuthRequest("register", payload);
     if (success) {
-        finalizeAuth(username);
+        switchToLogin();
+        showSuccess("ثبت‌نام با موفقیت انجام شد. لطفاً وارد شوید.");
     }
 }
 
@@ -156,20 +171,23 @@ async function processRegister() {
 loginBtn.onclick = () => { processLogin(); };
 registerBtn.onclick = () => { processRegister(); };
 
-[loginUsernameElem, loginPasswordElem].forEach(input => {
-    input.addEventListener("keydown", e => {
-        if (e.key === "Enter") {
-            processLogin();
-            e.preventDefault();
-        }
-    });
-});
+function setupEnterFocus(formId, submitCallback) {
+    const form = document.getElementById(formId);
+    const inputs = Array.from(form.querySelectorAll("input"));
 
-[registerUsernameElem, registerConfirmedPasswordElem, registerPasswordElem].forEach(input => {
-    input.addEventListener("keydown", e => {
-        if (e.key === "Enter") {
-            processRegister();
-            e.preventDefault();
-        }
+    inputs.forEach((input, index) => {
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                if (index < inputs.length - 1) {
+                    inputs[index + 1].focus();
+                } else {
+                    submitCallback();
+                }
+            }
+        });
     });
-});
+}
+
+setupEnterFocus("form-login", processLogin);
+setupEnterFocus("form-register", processRegister);
